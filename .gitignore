@@ -1,4 +1,11 @@
+# Fichier pour les variables d'environnement
 .env
+
+# Dossiers de cache Python
 __pycache__/
 *.pyc
-.DS_Store 
+
+# Dossiers d'environnement virtuel (si vous en utilisez un)
+venv/
+env/
+.venv/

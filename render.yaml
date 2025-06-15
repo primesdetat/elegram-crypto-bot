@@ -3,9 +3,11 @@ services:
     name: crypto-news-bot
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python3 bot.py
+    startCommand: gunicorn bot:app
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
       - key: CRYPTOCOMPARE_API_KEY
+        sync: false
+      - key: WEBHOOK_URL
         sync: false 

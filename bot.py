@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from flask import Flask, request
 
 # Configuration du logging
 logging.basicConfig(
@@ -17,13 +18,17 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CRYPTOCOMPARE_API_KEY = os.getenv('CRYPTOCOMPARE_API_KEY')
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
 # Vérification des variables d'environnement
 logger.info("Vérification des variables d'environnement...")
-if not TELEGRAM_TOKEN:
-    logger.error("TELEGRAM_TOKEN non trouvé!")
-if not CRYPTOCOMPARE_API_KEY:
-    logger.error("CRYPTOCOMPARE_API_KEY non trouvé!")
+if not all([TELEGRAM_TOKEN, CRYPTOCOMPARE_API_KEY, WEBHOOK_URL]):
+    logger.error("Variables d'environnement manquantes!")
+    missing = []
+    if not TELEGRAM_TOKEN: missing.append("TELEGRAM_TOKEN")
+    if not CRYPTOCOMPARE_API_KEY: missing.append("CRYPTOCOMPARE_API_KEY")
+    if not WEBHOOK_URL: missing.append("WEBHOOK_URL")
+    logger.error(f"Variables manquantes: {', '.join(missing)}")
 
 def escape_markdown(text):
     """Échappe les caractères spéciaux pour le formatage MarkdownV2"""
@@ -82,7 +87,7 @@ async def get_crypto_news():
         logger.error(f"Erreur inattendue: {e}")
         return f"❌ Une erreur inattendue s'est produite: {str(e)}"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gestionnaire de la commande /start"""
     logger.info(f"Commande /start reçue de {update.effective_user.id}")
     welcome_message = (
@@ -94,7 +99,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_message)
 
-async def send_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gestionnaire de la commande /actus"""
     try:
         logger.info(f"Commande /actus reçue de {update.effective_user.id}")
@@ -113,24 +118,43 @@ async def send_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Erreur lors de l'envoi du message: {e}")
         await update.message.reply_text(f"❌ Erreur lors de l'envoi du message: {str(e)}")
 
-def main():
-    """Fonction principale du bot"""
-    # Vérification des variables d'environnement
-    if not TELEGRAM_TOKEN or not CRYPTOCOMPARE_API_KEY:
-        logger.error("Variables d'environnement manquantes !")
-        return
+# Initialisation de l'application Flask
+app = Flask(__name__)
 
-    # Initialisation de l'application
-    logger.info("Initialisation du bot...")
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+# Initialisation de l'application Telegram
+application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Ajout des gestionnaires de commandes
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("actus", send_news))
+# Ajout des gestionnaires de commandes
+application.add_handler(CommandHandler("start", start_command))
+application.add_handler(CommandHandler("actus", news_command))
 
-    # Démarrage du bot
-    logger.info("Bot démarré !")
-    application.run_polling()
+@app.route('/')
+def index():
+    """Route principale pour vérifier que le serveur est en ligne"""
+    return "Bot server is running"
 
+@app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
+async def webhook():
+    """Route pour le webhook Telegram"""
+    try:
+        update = Update.de_json(request.get_json(), application.bot)
+        await application.process_update(update)
+        return "ok"
+    except Exception as e:
+        logger.error(f"Erreur dans le webhook: {e}")
+        return "error", 500
+
+async def setup():
+    """Configuration du webhook au démarrage"""
+    webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+    logger.info(f"Configuration du webhook: {webhook_url}")
+    await application.bot.set_webhook(url=webhook_url)
+
+# Configuration du webhook au démarrage (pour Gunicorn)
+if __name__ != "__main__":
+    import asyncio
+    asyncio.run(setup())
+
+# Démarrage du serveur Flask en mode développement
 if __name__ == "__main__":
-    main() 
+    app.run(host='0.0.0.0', port=8000) 
