@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 15:30"
+APP_VERSION = "2024.03.19 - 15:45"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -86,10 +86,23 @@ else:
     @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
     async def webhook():
         if application:
-            update_data = request.get_json()
-            update = Update.de_json(update_data, application.bot)
-            await application.process_update(update)
-            return "ok", 200
+            try:
+                update_data = request.get_json()
+                update = Update.de_json(update_data, application.bot)
+                
+                # Créer une nouvelle boucle d'événements si nécessaire
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                # Exécuter le traitement de la mise à jour dans la boucle
+                await application.process_update(update)
+                return "ok", 200
+            except Exception as e:
+                logger.error(f"Erreur lors du traitement du webhook: {e}")
+                return "error", 500
         return "Bot not configured", 500
 
     # --- Logique de démarrage et d'arrêt ---
@@ -98,29 +111,37 @@ else:
             logger.error("Application non initialisée ou WEBHOOK_URL manquante.")
             return
         
-        await application.initialize()
-        webhook_info = await application.bot.get_webhook_info()
-        full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
-        
-        if webhook_info.url != full_webhook_url:
-            await application.bot.set_webhook(url=full_webhook_url)
-            logger.info(f"Webhook configuré sur {full_webhook_url}")
-        else:
-            logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
+        try:
+            await application.initialize()
+            webhook_info = await application.bot.get_webhook_info()
+            full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+            
+            if webhook_info.url != full_webhook_url:
+                await application.bot.set_webhook(url=full_webhook_url)
+                logger.info(f"Webhook configuré sur {full_webhook_url}")
+            else:
+                logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
+        except Exception as e:
+            logger.error(f"Erreur lors de l'initialisation: {e}")
 
     async def shutdown():
         if application:
-            await application.shutdown()
-            logger.info("Application arrêtée proprement.")
+            try:
+                await application.shutdown()
+                logger.info("Application arrêtée proprement.")
+            except Exception as e:
+                logger.error(f"Erreur lors de l'arrêt: {e}")
 
     if __name__ != "__main__" and application:
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(setup())
-            else:
-                loop.run_until_complete(setup())
-            atexit.register(lambda: asyncio.run(shutdown()))
-        except RuntimeError:
-            asyncio.run(setup())
-            atexit.register(lambda: asyncio.run(shutdown()))
+            # Créer une nouvelle boucle d'événements
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Exécuter la configuration
+            loop.run_until_complete(setup())
+            
+            # Enregistrer la fonction d'arrêt
+            atexit.register(lambda: loop.run_until_complete(shutdown()))
+        except Exception as e:
+            logger.error(f"Erreur lors du démarrage: {e}")
