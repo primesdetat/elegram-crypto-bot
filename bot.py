@@ -21,16 +21,11 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 # --- Fonctions du bot (métier) ---
 async def get_crypto_news():
     """Récupère les dernières actualités crypto depuis l'API CryptoCompare."""
-    logger.info("Début de la fonction get_crypto_news.")
     url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
-    logger.info(f"Appel de l'API à l'URL : {url}")
     try:
-        response = requests.get(url, timeout=10)
-        logger.info(f"Réponse de l'API reçue, statut : {response.status_code}")
+        response = requests.get(url, timeout=10) # Timeout pour la robustesse
         response.raise_for_status()
-        
         data = response.json()
-        logger.info("Les données ont été parsées avec succès.")
 
         if data.get("Type") == 100 and "Data" in data:
             articles = data["Data"][:5]
@@ -47,14 +42,12 @@ async def get_crypto_news():
                     f"Source: {source}\n"
                     f"[Lire l'article]({article_url})\n"
                 )
-            logger.info("Formatage des articles terminé.")
             return "\n---\n\n".join(formatted_news)
         else:
-            logger.warning(f"Réponse inattendue de l'API CryptoCompare: {data}")
-            return "Désolé, je n'ai pas pu récupérer les actualités pour le moment."
+            return "Désolé, je n'ai pas pu récupérer les actualités (format de réponse inattendu)."
     except requests.exceptions.RequestException as e:
-        logger.error("ERREUR DÉTAILLÉE dans get_crypto_news: %s", e, exc_info=True)
-        return "Erreur de connexion à la source d'actualités."
+        logger.error(f"ERREUR lors de l'appel à CryptoCompare: {e}")
+        return "Erreur de connexion à la source d'actualités. Veuillez réessayer plus tard."
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Message de bienvenue pour la commande /start."""
@@ -66,7 +59,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     news_message = await get_crypto_news()
     await update.message.reply_text(news_message, parse_mode='MarkdownV2', disable_web_page_preview=True)
 
-# --- Le reste du code est inchangé ---
+# --- Initialisation de l'application Telegram ---
 if not TELEGRAM_TOKEN:
     logger.error("La variable d'environnement TELEGRAM_TOKEN n'est pas définie !")
     application = None
@@ -74,10 +67,14 @@ else:
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("actus", news_command))
+
+    # --- Partie Serveur Web (Flask) ---
     app = Flask(__name__)
+
     @app.route("/")
     def index():
         return "Bot server is running."
+
     @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
     async def webhook():
         if application:
@@ -86,22 +83,28 @@ else:
             await application.process_update(update)
             return "ok", 200
         return "Bot not configured", 500
+
+    # --- Logique de démarrage et d'arrêt ---
     async def setup():
         if not application or not WEBHOOK_URL:
             logger.error("Application non initialisée ou WEBHOOK_URL manquante.")
             return
+        
         await application.initialize()
         webhook_info = await application.bot.get_webhook_info()
         full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+        
         if webhook_info.url != full_webhook_url:
             await application.bot.set_webhook(url=full_webhook_url)
             logger.info(f"Webhook configuré sur {full_webhook_url}")
         else:
             logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
+
     async def shutdown():
         if application:
             await application.shutdown()
             logger.info("Application arrêtée proprement.")
+
     if __name__ != "__main__" and application:
         try:
             loop = asyncio.get_event_loop()
