@@ -31,6 +31,7 @@ async def get_crypto_news():
             formatted_news = []
             for article in articles:
                 title = article.get('title', 'Titre non disponible')
+                # LIGNE CRUCIALE : Échappement robuste pour MarkdownV2
                 title_escaped = title.replace('\\', '\\\\').replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
                 
                 article_url = article.get('url', '#')
@@ -91,7 +92,6 @@ else:
             logger.error("Application non initialisée ou WEBHOOK_URL manquante.")
             return
         
-        # On allume le moteur du bot
         await application.initialize()
         
         webhook_info = await application.bot.get_webhook_info()
@@ -110,14 +110,12 @@ else:
             logger.info("Application arrêtée proprement.")
 
     if __name__ != "__main__" and application:
-        # Cette condition est vraie quand Gunicorn lance l'application.
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 loop.create_task(setup())
             else:
                 loop.run_until_complete(setup())
-            # On enregistre la fonction d'arrêt pour qu'elle soit appelée à la fin
             atexit.register(lambda: asyncio.run(shutdown()))
         except RuntimeError:
             asyncio.run(setup())
