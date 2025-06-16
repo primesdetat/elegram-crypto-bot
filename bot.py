@@ -12,7 +12,7 @@ from telegram.constants import ParseMode
 from concurrent.futures import ThreadPoolExecutor
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 19:15"
+APP_VERSION = "2024.03.19 - 19:30"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -219,9 +219,13 @@ def webhook():
         # Exécuter le traitement de la mise à jour dans un thread séparé
         future = executor.submit(run_async, application.process_update(update))
         try:
-            future.result(timeout=30)  # Attendre le résultat avec un timeout
+            # Augmentation du timeout à 60 secondes
+            future.result(timeout=60)
             logger.info("Traitement de la mise à jour terminé avec succès")
             return "ok", 200
+        except TimeoutError:
+            logger.error("Timeout lors du traitement de la mise à jour")
+            return "timeout", 504
         except Exception as e:
             logger.error(f"Erreur lors du traitement de la mise à jour: {str(e)}\n{traceback.format_exc()}")
             return "error", 500
@@ -236,9 +240,13 @@ def init_app():
         # Initialisation de l'application dans un thread séparé
         future = executor.submit(run_async, setup())
         try:
-            future.result(timeout=30)  # Attendre l'initialisation avec un timeout
+            # Augmentation du timeout à 60 secondes
+            future.result(timeout=60)
             logger.info("Initialisation de l'application terminée avec succès")
             return app
+        except TimeoutError:
+            logger.error("Timeout lors de l'initialisation de l'application")
+            return None
         except Exception as e:
             logger.error(f"Erreur lors de l'initialisation: {str(e)}\n{traceback.format_exc()}")
             return None
