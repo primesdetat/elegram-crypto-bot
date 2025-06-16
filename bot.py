@@ -9,6 +9,9 @@ from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+# Version de l'application
+APP_VERSION = "2024.03.19 - 15:30"
+
 # --- Configuration ---
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -53,7 +56,10 @@ async def get_crypto_news():
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Message de bienvenue pour la commande /start."""
-    await update.message.reply_html("Bonjour ! Envoyez /actus pour les dernières nouvelles crypto.")
+    await update.message.reply_html(
+        f"Bonjour ! Envoyez /actus pour les dernières nouvelles crypto.\n\n"
+        f"<i>Version du code : {APP_VERSION}</i>"
+    )
 
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envoie les actualités crypto."""
@@ -75,7 +81,7 @@ else:
 
     @app.route("/")
     def index():
-        return "Bot server is running."
+        return f"Bot server is running. Version: {APP_VERSION}"
 
     @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
     async def webhook():
