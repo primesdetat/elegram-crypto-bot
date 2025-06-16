@@ -2,7 +2,7 @@
 import logging
 # ... le reste du code
 import os
-import requests
+import aiohttp
 import asyncio
 import atexit
 from flask import Flask, request
@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 16:30"
+APP_VERSION = "2024.03.19 - 16:45"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -26,6 +26,9 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 # Création d'une boucle d'événements globale
 loop = None
 
+# Création d'une session HTTP globale
+http_session = None
+
 def get_or_create_eventloop():
     """Crée ou récupère la boucle d'événements."""
     global loop
@@ -35,6 +38,20 @@ def get_or_create_eventloop():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop
+
+async def get_http_session():
+    """Crée ou récupère la session HTTP globale."""
+    global http_session
+    if http_session is None:
+        http_session = aiohttp.ClientSession()
+    return http_session
+
+async def close_http_session():
+    """Ferme la session HTTP globale."""
+    global http_session
+    if http_session:
+        await http_session.close()
+        http_session = None
 
 # --- Fonctions du bot (métier) ---
 def escape_markdown(text):
@@ -49,42 +66,43 @@ async def get_crypto_news():
     url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
     try:
         logger.info("Début de la récupération des actualités...")
-        response = requests.get(url, timeout=5)  # Réduit le timeout à 5 secondes
-        logger.info(f"Réponse reçue de l'API: {response.status_code}")
+        session = await get_http_session()
         
-        response.raise_for_status()
-        data = response.json()
-        logger.info("Données JSON reçues avec succès")
+        async with session.get(url, timeout=5) as response:
+            logger.info(f"Réponse reçue de l'API: {response.status}")
+            response.raise_for_status()
+            data = await response.json()
+            logger.info("Données JSON reçues avec succès")
 
-        if data.get("Type") == 100 and "Data" in data:
-            articles = data["Data"][:5]
-            logger.info(f"Nombre d'articles trouvés: {len(articles)}")
-            
-            formatted_news = []
-            for article in articles:
-                title = article.get('title', 'Titre non disponible')
-                title_escaped = escape_markdown(title)
+            if data.get("Type") == 100 and "Data" in data:
+                articles = data["Data"][:5]
+                logger.info(f"Nombre d'articles trouvés: {len(articles)}")
                 
-                article_url = article.get('url', '#')
-                source = article.get('source', 'Source inconnue')
-                source_escaped = escape_markdown(source)
+                formatted_news = []
+                for article in articles:
+                    title = article.get('title', 'Titre non disponible')
+                    title_escaped = escape_markdown(title)
+                    
+                    article_url = article.get('url', '#')
+                    source = article.get('source', 'Source inconnue')
+                    source_escaped = escape_markdown(source)
+                    
+                    formatted_news.append(
+                        f"*{title_escaped}*\n"
+                        f"Source: {source_escaped}\n"
+                        f"[Lire l'article]({article_url})\n"
+                    )
                 
-                formatted_news.append(
-                    f"*{title_escaped}*\n"
-                    f"Source: {source_escaped}\n"
-                    f"[Lire l'article]({article_url})\n"
-                )
-            
-            result = "\n---\n\n".join(formatted_news)
-            logger.info("Formatage des actualités terminé")
-            return result
-        else:
-            logger.error(f"Format de réponse inattendu: {data}")
-            return "Désolé, je n'ai pas pu récupérer les actualités (format de réponse inattendu)."
-    except requests.exceptions.Timeout:
+                result = "\n---\n\n".join(formatted_news)
+                logger.info("Formatage des actualités terminé")
+                return result
+            else:
+                logger.error(f"Format de réponse inattendu: {data}")
+                return "Désolé, je n'ai pas pu récupérer les actualités (format de réponse inattendu)."
+    except asyncio.TimeoutError:
         logger.error("Timeout lors de l'appel à l'API CryptoCompare")
         return "Désolé, la requête a pris trop de temps. Veuillez réessayer."
-    except requests.exceptions.RequestException as e:
+    except aiohttp.ClientError as e:
         logger.error(f"ERREUR lors de l'appel à CryptoCompare: {e}")
         return "Erreur de connexion à la source d'actualités. Veuillez réessayer plus tard."
     except Exception as e:
@@ -167,12 +185,16 @@ else:
             logger.error(f"Erreur lors de l'initialisation: {e}")
 
     async def shutdown():
+        """Ferme proprement toutes les ressources."""
         if application:
             try:
                 await application.shutdown()
                 logger.info("Application arrêtée proprement.")
             except Exception as e:
                 logger.error(f"Erreur lors de l'arrêt: {e}")
+        
+        # Fermer la session HTTP
+        await close_http_session()
 
     if __name__ != "__main__" and application:
         try:
