@@ -8,9 +8,10 @@ from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
+from concurrent.futures import ThreadPoolExecutor
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 18:30"
+APP_VERSION = "2024.03.19 - 18:45"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -26,7 +27,7 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 # Variables globales
 application = None
 http_session = None
-loop = None
+executor = ThreadPoolExecutor(max_workers=1)
 
 async def get_http_session():
     """Crée ou récupère la session HTTP globale."""
@@ -133,6 +134,15 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Erreur lors de l'envoi des actualités: {e}")
         await update.message.reply_text("Désolé, une erreur s'est produite lors de la récupération des actualités.")
 
+def run_async(coro):
+    """Exécute une coroutine dans une nouvelle boucle d'événements."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
 async def setup():
     """Initialise l'application et configure le webhook."""
     global application
@@ -184,33 +194,26 @@ def index():
     return f"Bot server is running. Version: {APP_VERSION}"
 
 @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
-async def webhook():
+def webhook():
     if not application:
         return "Bot not configured", 500
     
     try:
         update_data = request.get_json()
         update = Update.de_json(update_data, application.bot)
-        await application.process_update(update)
+        
+        # Exécuter le traitement de la mise à jour dans un thread séparé
+        executor.submit(run_async, application.process_update(update))
         return "ok", 200
     except Exception as e:
         logger.error(f"Erreur lors du traitement du webhook: {e}")
         return "error", 500
 
 def init_app():
-    """Initialise l'application Flask avec la boucle d'événements."""
-    global loop
+    """Initialise l'application Flask."""
     try:
-        # Création de la boucle d'événements
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Initialisation de l'application
-        loop.run_until_complete(setup())
-        
-        # Enregistrement de la fonction d'arrêt
-        atexit.register(lambda: loop.run_until_complete(shutdown()))
-        
+        # Initialisation de l'application dans un thread séparé
+        executor.submit(run_async, setup())
         return app
     except Exception as e:
         logger.error(f"Erreur lors de l'initialisation de l'application: {e}")
@@ -218,3 +221,6 @@ def init_app():
 
 # Initialisation de l'application
 app = init_app()
+
+# Enregistrement de la fonction d'arrêt
+atexit.register(lambda: executor.submit(run_async, shutdown()))
