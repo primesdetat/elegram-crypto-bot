@@ -2,6 +2,7 @@ import logging
 import os
 import requests
 import asyncio
+import atexit
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -60,6 +61,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Initialisation de l'application Telegram ---
 if not TELEGRAM_TOKEN:
     logger.error("La variable d'environnement TELEGRAM_TOKEN n'est pas définie !")
+    application = None
 else:
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start_command))
@@ -70,40 +72,53 @@ else:
 
     @app.route("/")
     def index():
-        return "Bot server is running, but this page is not meant to be accessed directly."
+        return "Bot server is running."
 
     @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
     async def webhook():
         """Cette fonction est appelée par Telegram à chaque nouveau message."""
-        update_data = request.get_json()
-        update = Update.de_json(update_data, application.bot)
-        await application.process_update(update)
-        return "ok", 200
+        if application:
+            update_data = request.get_json()
+            update = Update.de_json(update_data, application.bot)
+            await application.process_update(update)
+            return "ok", 200
+        return "Bot not configured", 500
 
-    # --- Logique de démarrage exécutée par Gunicorn ---
+    # --- Logique de démarrage et d'arrêt ---
     async def setup():
-        """Configure le webhook une seule fois au démarrage."""
-        if not WEBHOOK_URL:
-            logger.error("La variable d'environnement WEBHOOK_URL n'est pas définie !")
+        """Initialise l'application et configure le webhook."""
+        if not application or not WEBHOOK_URL:
+            logger.error("Application non initialisée ou WEBHOOK_URL manquante.")
             return
+        
+        # On allume le moteur du bot
+        await application.initialize()
         
         webhook_info = await application.bot.get_webhook_info()
         full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+        
         if webhook_info.url != full_webhook_url:
             await application.bot.set_webhook(url=full_webhook_url)
             logger.info(f"Webhook configuré sur {full_webhook_url}")
         else:
             logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
 
-    if __name__ != "__main__":
+    async def shutdown():
+        """Arrête proprement l'application."""
+        if application:
+            await application.shutdown()
+            logger.info("Application arrêtée proprement.")
+
+    if __name__ != "__main__" and application:
+        # Cette condition est vraie quand Gunicorn lance l'application.
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # Si une boucle tourne déjà, on l'utilise pour lancer notre tâche
                 loop.create_task(setup())
             else:
-                # Sinon, on lance une nouvelle boucle jusqu'à ce que setup() soit terminé
                 loop.run_until_complete(setup())
+            # On enregistre la fonction d'arrêt pour qu'elle soit appelée à la fin
+            atexit.register(lambda: asyncio.run(shutdown()))
         except RuntimeError:
-            # Sécurité si get_event_loop échoue dans certains environnements
             asyncio.run(setup())
+            atexit.register(lambda: asyncio.run(shutdown()))
