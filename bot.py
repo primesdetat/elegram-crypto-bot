@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 16:45"
+APP_VERSION = "2024.03.19 - 17:00"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -56,9 +56,21 @@ async def close_http_session():
 # --- Fonctions du bot (métier) ---
 def escape_markdown(text):
     """Échappe les caractères spéciaux pour MarkdownV2."""
-    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    if not text:
+        return ""
+    
+    # Liste complète des caractères spéciaux pour MarkdownV2
+    special_chars = [
+        '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
+    ]
+    
+    # Échapper d'abord les backslashes
+    text = text.replace('\\', '\\\\')
+    
+    # Échapper ensuite tous les autres caractères spéciaux
     for char in special_chars:
         text = text.replace(char, f'\\{char}')
+    
     return text
 
 async def get_crypto_news():
@@ -82,6 +94,8 @@ async def get_crypto_news():
                 for article in articles:
                     title = article.get('title', 'Titre non disponible')
                     title_escaped = escape_markdown(title)
+                    logger.debug(f"Titre original: {title}")
+                    logger.debug(f"Titre échappé: {title_escaped}")
                     
                     article_url = article.get('url', '#')
                     source = article.get('source', 'Source inconnue')
