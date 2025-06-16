@@ -1,163 +1,110 @@
 import logging
 import os
-import re
-from dotenv import load_dotenv
 import requests
+import asyncio
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from flask import Flask, request
-import asyncio
 
-# Configuration du logging
+# --- Configuration ---
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Chargement des variables d'environnement
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-CRYPTOCOMPARE_API_KEY = os.getenv('CRYPTOCOMPARE_API_KEY')
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+# Récupération des clés depuis les variables d'environnement de Render
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Vérification des variables d'environnement
-logger.info("Vérification des variables d'environnement...")
-if not all([TELEGRAM_TOKEN, CRYPTOCOMPARE_API_KEY, WEBHOOK_URL]):
-    logger.error("Variables d'environnement manquantes!")
-    missing = []
-    if not TELEGRAM_TOKEN: missing.append("TELEGRAM_TOKEN")
-    if not CRYPTOCOMPARE_API_KEY: missing.append("CRYPTOCOMPARE_API_KEY")
-    if not WEBHOOK_URL: missing.append("WEBHOOK_URL")
-    logger.error(f"Variables manquantes: {', '.join(missing)}")
-
-def escape_markdown(text):
-    """Échappe les caractères spéciaux pour le formatage MarkdownV2"""
-    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    for char in special_chars:
-        text = text.replace(char, f'\\{char}')
-    return text
-
+# --- Fonctions du bot (métier) ---
 async def get_crypto_news():
-    """Récupère les actualités crypto depuis l'API CryptoCompare"""
+    """Récupère les dernières actualités crypto depuis l'API CryptoCompare."""
+    url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
     try:
-        url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
-        logger.info(f"Requête API vers: {url}")
         response = requests.get(url)
         response.raise_for_status()
-        
         data = response.json()
-        logger.info(f"Réponse API reçue: {data}")
-        
-        # Vérification de la présence des données
-        if not data.get('Data'):
-            logger.warning("Aucune donnée trouvée dans la réponse API")
-            return "❌ Aucune actualité trouvée."
-        
-        news = data['Data'][:5]  # Prend les 5 premiers articles
-        message = "📰 Dernières actualités crypto :\n\n"
-        
-        for article in news:
-            try:
-                # Nettoyage du titre et de la source
-                title = article.get('title', '').replace('*', '').replace('_', '').replace('[', '').replace(']', '')
-                source = article.get('source', '').replace('*', '').replace('_', '')
-                url = article.get('url', '')
+        if data.get("Type") == 100 and "Data" in data:
+            articles = data["Data"][:5]
+            formatted_news = []
+            for article in articles:
+                # Échappement robuste des caractères pour MarkdownV2
+                title = article.get('title', 'Titre non disponible')
+                title_escaped = title.replace('\\', '\\\\').replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
                 
-                # Construction du message pour cet article
-                article_message = f"• {title}\n"
-                article_message += f"Source: {source}\n"
-                article_message += f"Lien: {url}\n\n"
-                
-                message += article_message
-            except Exception as e:
-                logger.error(f"Erreur lors du formatage d'un article: {e}")
-                continue
-        
-        if not message.strip():
-            logger.warning("Message vide après formatage")
-            return "❌ Aucune actualité trouvée."
-            
-        logger.info(f"Message final préparé: {message}")
-        return message
-    
-    except requests.RequestException as e:
-        logger.error(f"Erreur de requête: {e}")
-        return f"❌ Erreur de connexion à l'API: {str(e)}"
-    except Exception as e:
-        logger.error(f"Erreur inattendue: {e}")
-        return f"❌ Une erreur inattendue s'est produite: {str(e)}"
+                article_url = article.get('url', '#')
+                source = article.get('source', 'Source inconnue')
+                formatted_news.append(
+                    f"*{title_escaped}*\n"
+                    f"Source: {source}\n"
+                    f"[Lire l'article]({article_url})\n"
+                )
+            return "\n---\n\n".join(formatted_news)
+        else:
+            logger.warning(f"Réponse inattendue de l'API CryptoCompare: {data}")
+            return "Désolé, je n'ai pas pu récupérer les actualités pour le moment."
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erreur de l'API CryptoCompare: {e}")
+        return "Erreur de connexion à la source d'actualités."
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gestionnaire de la commande /start"""
-    logger.info(f"Commande /start reçue de {update.effective_user.id}")
-    welcome_message = (
-        "👋 Bienvenue sur le Bot d'Actualités Crypto !\n\n"
-        "Je peux vous tenir informé des dernières actualités du monde des cryptomonnaies.\n\n"
-        "Commandes disponibles :\n"
-        "/actus - Afficher les dernières actualités crypto\n"
-        "/start - Afficher ce message d'aide"
-    )
-    await update.message.reply_text(welcome_message)
+    """Message de bienvenue pour la commande /start."""
+    await update.message.reply_html("Bonjour ! Envoyez /actus pour les dernières nouvelles crypto.")
 
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gestionnaire de la commande /actus"""
-    try:
-        logger.info(f"Commande /actus reçue de {update.effective_user.id}")
-        # Message de chargement
-        loading_message = await update.message.reply_text("🔍 Recherche des dernières actualités...")
-        
-        # Récupération et envoi des actualités
-        news = await get_crypto_news()
-        logger.info(f"Tentative d'envoi du message: {news}")
-        
-        await loading_message.edit_text(
-            news,
-            disable_web_page_preview=True
-        )
-    except Exception as e:
-        logger.error(f"Erreur lors de l'envoi du message: {e}")
-        await update.message.reply_text(f"❌ Erreur lors de l'envoi du message: {str(e)}")
+    """Envoie les actualités crypto."""
+    await update.message.reply_text("Recherche des dernières actualités...")
+    news_message = await get_crypto_news()
+    await update.message.reply_text(news_message, parse_mode='MarkdownV2', disable_web_page_preview=True)
 
-# Initialisation de l'application Flask
-app = Flask(__name__)
+# --- Initialisation de l'application Telegram ---
+# On vérifie que le token existe bien avant de construire l'application
+if not TELEGRAM_TOKEN:
+    logger.error("La variable d'environnement TELEGRAM_TOKEN n'est pas définie !")
+else:
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("actus", news_command))
 
-# Initialisation de l'application Telegram
-application = Application.builder().token(TELEGRAM_TOKEN).build()
+    # --- Partie Serveur Web (Flask) ---
+    app = Flask(__name__)
 
-# Ajout des gestionnaires de commandes
-application.add_handler(CommandHandler("start", start_command))
-application.add_handler(CommandHandler("actus", news_command))
+    @app.route("/")
+    def index():
+        return "Bot server is running, but this page is not meant to be accessed directly."
 
-@app.route('/')
-def index():
-    """Route principale pour vérifier que le serveur est en ligne"""
-    return "Bot server is running"
-
-@app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
-async def webhook():
-    """Route pour le webhook Telegram"""
-    try:
-        update = Update.de_json(request.get_json(), application.bot)
+    @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
+    async def webhook():
+        """Cette fonction est appelée par Telegram à chaque nouveau message."""
+        update_data = request.get_json()
+        update = Update.de_json(update_data, application.bot)
         await application.process_update(update)
-        return "ok"
-    except Exception as e:
-        logger.error(f"Erreur dans le webhook: {e}")
-        return "error", 500
+        return "ok", 200
 
-async def setup():
-    """Configuration du webhook au démarrage"""
-    webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
-    logger.info(f"Configuration du webhook: {webhook_url}")
-    await application.bot.set_webhook(url=webhook_url)
+    # --- Logique de démarrage exécutée par Gunicorn ---
+    async def setup():
+        """Configure le webhook une seule fois au démarrage."""
+        if not WEBHOOK_URL:
+            logger.error("La variable d'environnement WEBHOOK_URL n'est pas définie !")
+            return
+        # `get_bot` est nécessaire pour s'assurer que le bot est initialisé
+        await application.get_bot()
+        webhook_info = await application.bot.get_webhook_info()
+        full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+        if webhook_info.url != full_webhook_url:
+            await application.bot.set_webhook(url=full_webhook_url)
+            logger.info(f"Webhook configuré sur {full_webhook_url}")
+        else:
+            logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
 
-# Configuration du webhook au démarrage
-@app.before_first_request
-def before_first_request():
-    """Configure le webhook avant la première requête"""
-    asyncio.run(setup())
-
-# Démarrage du serveur Flask en mode développement
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host='0.0.0.0', port=port) 
+    if __name__ != "__main__":
+        # Cette condition est vraie quand Gunicorn lance l'application.
+        # C'est le bon endroit pour notre code de démarrage.
+        try:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(setup())
+        except RuntimeError:
+            # Si une boucle est déjà en cours, on en crée une nouvelle
+            # C'est une sécurité pour certains environnements de déploiement
+            asyncio.run(setup())
