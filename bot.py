@@ -29,7 +29,6 @@ async def get_crypto_news():
             articles = data["Data"][:5]
             formatted_news = []
             for article in articles:
-                # Échappement robuste des caractères pour MarkdownV2
                 title = article.get('title', 'Titre non disponible')
                 title_escaped = title.replace('\\', '\\\\').replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
                 
@@ -59,7 +58,6 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(news_message, parse_mode='MarkdownV2', disable_web_page_preview=True)
 
 # --- Initialisation de l'application Telegram ---
-# On vérifie que le token existe bien avant de construire l'application
 if not TELEGRAM_TOKEN:
     logger.error("La variable d'environnement TELEGRAM_TOKEN n'est pas définie !")
 else:
@@ -84,26 +82,28 @@ else:
 
     # --- Logique de démarrage exécutée par Gunicorn ---
     async def setup():
-    """Configure le webhook une seule fois au démarrage."""
-    if not WEBHOOK_URL:
-        logger.error("La variable d'environnement WEBHOOK_URL n'est pas définie !")
-        return
-    # La ligne erronée a été supprimée. On passe directement à l'utilisation de application.bot
-    webhook_info = await application.bot.get_webhook_info()
-    full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
-    if webhook_info.url != full_webhook_url:
-        await application.bot.set_webhook(url=full_webhook_url)
-        logger.info(f"Webhook configuré sur {full_webhook_url}")
-    else:
-        logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
+        """Configure le webhook une seule fois au démarrage."""
+        if not WEBHOOK_URL:
+            logger.error("La variable d'environnement WEBHOOK_URL n'est pas définie !")
+            return
+        
+        webhook_info = await application.bot.get_webhook_info()
+        full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+        if webhook_info.url != full_webhook_url:
+            await application.bot.set_webhook(url=full_webhook_url)
+            logger.info(f"Webhook configuré sur {full_webhook_url}")
+        else:
+            logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
 
     if __name__ != "__main__":
-        # Cette condition est vraie quand Gunicorn lance l'application.
-        # C'est le bon endroit pour notre code de démarrage.
         try:
             loop = asyncio.get_event_loop()
-            loop.run_until_complete(setup())
+            if loop.is_running():
+                # Si une boucle tourne déjà, on l'utilise pour lancer notre tâche
+                loop.create_task(setup())
+            else:
+                # Sinon, on lance une nouvelle boucle jusqu'à ce que setup() soit terminé
+                loop.run_until_complete(setup())
         except RuntimeError:
-            # Si une boucle est déjà en cours, on en crée une nouvelle
-            # C'est une sécurité pour certains environnements de déploiement
+            # Sécurité si get_event_loop échoue dans certains environnements
             asyncio.run(setup())
