@@ -12,7 +12,7 @@ from telegram.constants import ParseMode
 from concurrent.futures import ThreadPoolExecutor
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 19:30"
+APP_VERSION = "2024.03.19 - 19:45"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -29,18 +29,6 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 application = None
 http_session = None
 executor = ThreadPoolExecutor(max_workers=1)
-
-def run_async(coro):
-    """Exécute une coroutine dans une nouvelle boucle d'événements."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    except Exception as e:
-        logger.error(f"Erreur dans run_async: {str(e)}\n{traceback.format_exc()}")
-        raise
-    finally:
-        loop.close()
 
 async def get_http_session():
     """Crée ou récupère la session HTTP globale."""
@@ -216,19 +204,10 @@ def webhook():
         logger.info(f"Webhook reçu: {update_data}")
         update = Update.de_json(update_data, application.bot)
         
-        # Exécuter le traitement de la mise à jour dans un thread séparé
-        future = executor.submit(run_async, application.process_update(update))
-        try:
-            # Augmentation du timeout à 60 secondes
-            future.result(timeout=60)
-            logger.info("Traitement de la mise à jour terminé avec succès")
-            return "ok", 200
-        except TimeoutError:
-            logger.error("Timeout lors du traitement de la mise à jour")
-            return "timeout", 504
-        except Exception as e:
-            logger.error(f"Erreur lors du traitement de la mise à jour: {str(e)}\n{traceback.format_exc()}")
-            return "error", 500
+        # Exécuter le traitement de la mise à jour de manière asynchrone
+        asyncio.run(application.process_update(update))
+        logger.info("Traitement de la mise à jour terminé avec succès")
+        return "ok", 200
     except Exception as e:
         logger.error(f"Erreur lors du traitement du webhook: {str(e)}\n{traceback.format_exc()}")
         return "error", 500
@@ -237,19 +216,10 @@ def init_app():
     """Initialise l'application Flask."""
     try:
         logger.info("Démarrage de l'initialisation de l'application...")
-        # Initialisation de l'application dans un thread séparé
-        future = executor.submit(run_async, setup())
-        try:
-            # Augmentation du timeout à 60 secondes
-            future.result(timeout=60)
-            logger.info("Initialisation de l'application terminée avec succès")
-            return app
-        except TimeoutError:
-            logger.error("Timeout lors de l'initialisation de l'application")
-            return None
-        except Exception as e:
-            logger.error(f"Erreur lors de l'initialisation: {str(e)}\n{traceback.format_exc()}")
-            return None
+        # Initialisation de l'application de manière synchrone
+        asyncio.run(setup())
+        logger.info("Initialisation de l'application terminée avec succès")
+        return app
     except Exception as e:
         logger.error(f"Erreur lors de l'initialisation de l'application: {str(e)}\n{traceback.format_exc()}")
         return None
@@ -258,4 +228,4 @@ def init_app():
 app = init_app()
 
 # Enregistrement de la fonction d'arrêt
-atexit.register(lambda: executor.submit(run_async, shutdown()))
+atexit.register(lambda: asyncio.run(shutdown()))
