@@ -25,7 +25,7 @@ async def get_crypto_news():
     url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
     logger.info(f"Appel de l'API à l'URL : {url}")
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         logger.info(f"Réponse de l'API reçue, statut : {response.status_code}")
         response.raise_for_status()
         
