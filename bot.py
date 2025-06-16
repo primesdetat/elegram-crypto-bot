@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 17:30"
+APP_VERSION = "2024.03.19 - 17:45"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -24,33 +24,20 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Création d'une boucle d'événements globale
-loop = None
-
 # Création d'une session HTTP globale
 http_session = None
-
-def get_or_create_eventloop():
-    """Crée ou récupère la boucle d'événements."""
-    global loop
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop
 
 async def get_http_session():
     """Crée ou récupère la session HTTP globale."""
     global http_session
-    if http_session is None:
+    if http_session is None or http_session.closed:
         http_session = aiohttp.ClientSession()
     return http_session
 
 async def close_http_session():
     """Ferme la session HTTP globale."""
     global http_session
-    if http_session:
+    if http_session and not http_session.closed:
         await http_session.close()
         http_session = None
 
@@ -77,6 +64,7 @@ def escape_markdown(text):
 async def get_crypto_news():
     """Récupère les dernières actualités crypto depuis l'API CryptoCompare."""
     url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
+    session = None
     try:
         logger.info("Début de la récupération des actualités...")
         session = await get_http_session()
@@ -151,6 +139,13 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Recherche des dernières actualités...")
         logger.info("Commande /actus reçue, début du traitement")
         
+        # Créer une nouvelle boucle d'événements si nécessaire
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
         news_message = await get_crypto_news()
         logger.info("Actualités récupérées, envoi du message")
         
@@ -187,8 +182,12 @@ else:
                 update_data = request.get_json()
                 update = Update.de_json(update_data, application.bot)
                 
-                # Utiliser la boucle d'événements globale
-                loop = get_or_create_eventloop()
+                # Créer une nouvelle boucle d'événements si nécessaire
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
                 
                 # Exécuter le traitement de la mise à jour dans la boucle
                 await application.process_update(update)
@@ -231,8 +230,9 @@ else:
 
     if __name__ != "__main__" and application:
         try:
-            # Initialiser la boucle d'événements globale
-            loop = get_or_create_eventloop()
+            # Créer une nouvelle boucle d'événements
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             
             # Exécuter la configuration
             loop.run_until_complete(setup())
