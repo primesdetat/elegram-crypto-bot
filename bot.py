@@ -157,12 +157,7 @@ def before_first_request():
     """Configure le webhook avant la première requête"""
     asyncio.run(setup())
 
-# Fonction d'initialisation pour Gunicorn
-def init_app():
-    """Initialise l'application pour Gunicorn"""
-    asyncio.run(setup())
-    return app
-
 # Démarrage du serveur Flask en mode développement
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8000) 
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host='0.0.0.0', port=port) 

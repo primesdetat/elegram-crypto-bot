@@ -3,7 +3,7 @@ services:
     name: crypto-news-bot
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn "bot:init_app()"
+    startCommand: gunicorn --bind 0.0.0.0:$PORT bot:app
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
