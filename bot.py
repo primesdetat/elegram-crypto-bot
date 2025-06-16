@@ -6,6 +6,7 @@ import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from flask import Flask, request
+import asyncio
 
 # Configuration du logging
 logging.basicConfig(
@@ -150,9 +151,10 @@ async def setup():
     logger.info(f"Configuration du webhook: {webhook_url}")
     await application.bot.set_webhook(url=webhook_url)
 
-# Configuration du webhook au démarrage (pour Gunicorn)
-if __name__ != "__main__":
-    import asyncio
+# Configuration du webhook au démarrage
+@app.before_first_request
+def before_first_request():
+    """Configure le webhook avant la première requête"""
     asyncio.run(setup())
 
 # Démarrage du serveur Flask en mode développement
