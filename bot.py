@@ -8,9 +8,10 @@ import atexit
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.constants import ParseMode
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 17:00"
+APP_VERSION = "2024.03.19 - 17:15"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -93,18 +94,14 @@ async def get_crypto_news():
                 formatted_news = []
                 for article in articles:
                     title = article.get('title', 'Titre non disponible')
-                    title_escaped = escape_markdown(title)
-                    logger.debug(f"Titre original: {title}")
-                    logger.debug(f"Titre échappé: {title_escaped}")
-                    
                     article_url = article.get('url', '#')
                     source = article.get('source', 'Source inconnue')
-                    source_escaped = escape_markdown(source)
                     
+                    # Utiliser HTML au lieu de MarkdownV2
                     formatted_news.append(
-                        f"*{title_escaped}*\n"
-                        f"Source: {source_escaped}\n"
-                        f"[Lire l'article]({article_url})\n"
+                        f"<b>{title}</b>\n"
+                        f"Source: {source}\n"
+                        f"<a href='{article_url}'>Lire l'article</a>\n"
                     )
                 
                 result = "\n---\n\n".join(formatted_news)
@@ -139,7 +136,11 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         news_message = await get_crypto_news()
         logger.info("Actualités récupérées, envoi du message")
         
-        await update.message.reply_text(news_message, parse_mode='MarkdownV2', disable_web_page_preview=True)
+        await update.message.reply_text(
+            news_message,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
         logger.info("Message envoyé avec succès")
     except Exception as e:
         logger.error(f"Erreur lors de l'envoi des actualités: {e}")
