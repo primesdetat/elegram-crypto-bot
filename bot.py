@@ -1,6 +1,5 @@
 # TEST FINAL DE SAUVEGARDE
 import logging
-# ... le reste du code
 import os
 import aiohttp
 import asyncio
@@ -11,7 +10,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 18:15"
+APP_VERSION = "2024.03.19 - 18:30"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -24,8 +23,10 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Création d'une session HTTP globale
+# Variables globales
+application = None
 http_session = None
+loop = None
 
 async def get_http_session():
     """Crée ou récupère la session HTTP globale."""
@@ -40,26 +41,6 @@ async def close_http_session():
     if http_session and not http_session.closed:
         await http_session.close()
         http_session = None
-
-# --- Fonctions du bot (métier) ---
-def escape_markdown(text):
-    """Échappe les caractères spéciaux pour MarkdownV2."""
-    if not text:
-        return ""
-    
-    # Liste complète des caractères spéciaux pour MarkdownV2
-    special_chars = [
-        '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
-    ]
-    
-    # Échapper d'abord les backslashes
-    text = text.replace('\\', '\\\\')
-    
-    # Échapper ensuite tous les autres caractères spéciaux
-    for char in special_chars:
-        text = text.replace(char, f'\\{char}')
-    
-    return text
 
 async def get_crypto_news():
     """Récupère les dernières actualités crypto depuis l'API CryptoCompare."""
@@ -152,42 +133,21 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Erreur lors de l'envoi des actualités: {e}")
         await update.message.reply_text("Désolé, une erreur s'est produite lors de la récupération des actualités.")
 
-# --- Initialisation de l'application Telegram ---
-if not TELEGRAM_TOKEN:
-    logger.error("La variable d'environnement TELEGRAM_TOKEN n'est pas définie !")
-    application = None
-else:
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("actus", news_command))
-
-    # --- Partie Serveur Web (Flask) ---
-    app = Flask(__name__)
-
-    @app.route("/")
-    def index():
-        return f"Bot server is running. Version: {APP_VERSION}"
-
-    @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
-    async def webhook():
-        if application:
-            try:
-                update_data = request.get_json()
-                update = Update.de_json(update_data, application.bot)
-                await application.process_update(update)
-                return "ok", 200
-            except Exception as e:
-                logger.error(f"Erreur lors du traitement du webhook: {e}")
-                return "error", 500
-        return "Bot not configured", 500
-
-    # --- Logique de démarrage et d'arrêt ---
-    async def setup():
-        if not application or not WEBHOOK_URL:
-            logger.error("Application non initialisée ou WEBHOOK_URL manquante.")
-            return
+async def setup():
+    """Initialise l'application et configure le webhook."""
+    global application
+    if not TELEGRAM_TOKEN:
+        logger.error("La variable d'environnement TELEGRAM_TOKEN n'est pas définie !")
+        return
+    
+    try:
+        # Initialisation de l'application
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("actus", news_command))
         
-        try:
+        # Configuration du webhook
+        if WEBHOOK_URL:
             await application.initialize()
             webhook_info = await application.bot.get_webhook_info()
             full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
@@ -197,31 +157,64 @@ else:
                 logger.info(f"Webhook configuré sur {full_webhook_url}")
             else:
                 logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
-        except Exception as e:
-            logger.error(f"Erreur lors de l'initialisation: {e}")
+        else:
+            logger.error("WEBHOOK_URL n'est pas définie !")
+    except Exception as e:
+        logger.error(f"Erreur lors de l'initialisation: {e}")
 
-    async def shutdown():
-        """Ferme proprement toutes les ressources."""
+async def shutdown():
+    """Ferme proprement toutes les ressources."""
+    global application, http_session
+    try:
         if application:
-            try:
-                await application.shutdown()
-                logger.info("Application arrêtée proprement.")
-            except Exception as e:
-                logger.error(f"Erreur lors de l'arrêt: {e}")
+            await application.shutdown()
+            logger.info("Application arrêtée proprement.")
         
-        # Fermer la session HTTP
-        await close_http_session()
+        if http_session and not http_session.closed:
+            await http_session.close()
+            logger.info("Session HTTP fermée proprement.")
+    except Exception as e:
+        logger.error(f"Erreur lors de l'arrêt: {e}")
 
-    if __name__ != "__main__" and application:
-        try:
-            # Créer une nouvelle boucle d'événements
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            # Exécuter la configuration
-            loop.run_until_complete(setup())
-            
-            # Enregistrer la fonction d'arrêt
-            atexit.register(lambda: loop.run_until_complete(shutdown()))
-        except Exception as e:
-            logger.error(f"Erreur lors du démarrage: {e}")
+# --- Partie Serveur Web (Flask) ---
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return f"Bot server is running. Version: {APP_VERSION}"
+
+@app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
+async def webhook():
+    if not application:
+        return "Bot not configured", 500
+    
+    try:
+        update_data = request.get_json()
+        update = Update.de_json(update_data, application.bot)
+        await application.process_update(update)
+        return "ok", 200
+    except Exception as e:
+        logger.error(f"Erreur lors du traitement du webhook: {e}")
+        return "error", 500
+
+def init_app():
+    """Initialise l'application Flask avec la boucle d'événements."""
+    global loop
+    try:
+        # Création de la boucle d'événements
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Initialisation de l'application
+        loop.run_until_complete(setup())
+        
+        # Enregistrement de la fonction d'arrêt
+        atexit.register(lambda: loop.run_until_complete(shutdown()))
+        
+        return app
+    except Exception as e:
+        logger.error(f"Erreur lors de l'initialisation de l'application: {e}")
+        return None
+
+# Initialisation de l'application
+app = init_app()
