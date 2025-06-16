@@ -12,7 +12,7 @@ from telegram.constants import ParseMode
 from concurrent.futures import ThreadPoolExecutor
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 19:45"
+APP_VERSION = "2024.03.19 - 20:00"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -28,7 +28,16 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 # Variables globales
 application = None
 http_session = None
-executor = ThreadPoolExecutor(max_workers=1)
+loop = None
+
+def get_or_create_eventloop():
+    """Crée ou récupère la boucle d'événements."""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
 
 async def get_http_session():
     """Crée ou récupère la session HTTP globale."""
@@ -204,8 +213,9 @@ def webhook():
         logger.info(f"Webhook reçu: {update_data}")
         update = Update.de_json(update_data, application.bot)
         
-        # Exécuter le traitement de la mise à jour de manière asynchrone
-        asyncio.run(application.process_update(update))
+        # Exécuter le traitement de la mise à jour dans la boucle d'événements existante
+        loop = get_or_create_eventloop()
+        loop.run_until_complete(application.process_update(update))
         logger.info("Traitement de la mise à jour terminé avec succès")
         return "ok", 200
     except Exception as e:
@@ -216,8 +226,9 @@ def init_app():
     """Initialise l'application Flask."""
     try:
         logger.info("Démarrage de l'initialisation de l'application...")
-        # Initialisation de l'application de manière synchrone
-        asyncio.run(setup())
+        # Initialisation de l'application dans la boucle d'événements existante
+        loop = get_or_create_eventloop()
+        loop.run_until_complete(setup())
         logger.info("Initialisation de l'application terminée avec succès")
         return app
     except Exception as e:
@@ -228,4 +239,12 @@ def init_app():
 app = init_app()
 
 # Enregistrement de la fonction d'arrêt
-atexit.register(lambda: asyncio.run(shutdown()))
+def cleanup():
+    """Fonction de nettoyage pour l'arrêt de l'application."""
+    try:
+        loop = get_or_create_eventloop()
+        loop.run_until_complete(shutdown())
+    except Exception as e:
+        logger.error(f"Erreur lors du nettoyage: {str(e)}\n{traceback.format_exc()}")
+
+atexit.register(cleanup)
