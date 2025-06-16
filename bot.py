@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 15:45"
+APP_VERSION = "2024.03.19 - 16:00"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -24,11 +24,18 @@ CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 # --- Fonctions du bot (métier) ---
+def escape_markdown(text):
+    """Échappe les caractères spéciaux pour MarkdownV2."""
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
 async def get_crypto_news():
     """Récupère les dernières actualités crypto depuis l'API CryptoCompare."""
     url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
     try:
-        response = requests.get(url, timeout=10) # Timeout pour la robustesse
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
 
@@ -37,14 +44,15 @@ async def get_crypto_news():
             formatted_news = []
             for article in articles:
                 title = article.get('title', 'Titre non disponible')
-                # LIGNE CRUCIALE : Échappement robuste pour MarkdownV2
-                title_escaped = title.replace('\\', '\\\\').replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)').replace('~', '\\~').replace('`', '\\`').replace('>', '\\>').replace('#', '\\#').replace('+', '\\+').replace('-', '\\-').replace('=', '\\=').replace('|', '\\|').replace('{', '\\{').replace('}', '\\}').replace('.', '\\.').replace('!', '\\!')
+                title_escaped = escape_markdown(title)
                 
                 article_url = article.get('url', '#')
                 source = article.get('source', 'Source inconnue')
+                source_escaped = escape_markdown(source)
+                
                 formatted_news.append(
                     f"*{title_escaped}*\n"
-                    f"Source: {source}\n"
+                    f"Source: {source_escaped}\n"
                     f"[Lire l'article]({article_url})\n"
                 )
             return "\n---\n\n".join(formatted_news)
