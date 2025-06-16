@@ -4,6 +4,7 @@ import os
 import aiohttp
 import asyncio
 import atexit
+import traceback
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -11,7 +12,7 @@ from telegram.constants import ParseMode
 from concurrent.futures import ThreadPoolExecutor
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 19:00"
+APP_VERSION = "2024.03.19 - 19:15"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -36,7 +37,7 @@ def run_async(coro):
     try:
         return loop.run_until_complete(coro)
     except Exception as e:
-        logger.error(f"Erreur dans run_async: {e}")
+        logger.error(f"Erreur dans run_async: {str(e)}\n{traceback.format_exc()}")
         raise
     finally:
         loop.close()
@@ -117,15 +118,19 @@ async def get_crypto_news():
         logger.error(f"ERREUR lors de l'appel à CryptoCompare: {e}")
         return "Erreur de connexion à la source d'actualités. Veuillez réessayer plus tard."
     except Exception as e:
-        logger.error(f"Erreur inattendue: {e}")
+        logger.error(f"Erreur inattendue: {str(e)}\n{traceback.format_exc()}")
         return "Une erreur inattendue s'est produite. Veuillez réessayer."
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Message de bienvenue pour la commande /start."""
-    await update.message.reply_html(
-        f"Bonjour ! Envoyez /actus pour les dernières nouvelles crypto.\n\n"
-        f"<i>Version du code : {APP_VERSION}</i>"
-    )
+    try:
+        await update.message.reply_html(
+            f"Bonjour ! Envoyez /actus pour les dernières nouvelles crypto.\n\n"
+            f"<i>Version du code : {APP_VERSION}</i>"
+        )
+    except Exception as e:
+        logger.error(f"Erreur dans start_command: {str(e)}\n{traceback.format_exc()}")
+        raise
 
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envoie les actualités crypto."""
@@ -143,7 +148,7 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         logger.info("Message envoyé avec succès")
     except Exception as e:
-        logger.error(f"Erreur lors de l'envoi des actualités: {e}")
+        logger.error(f"Erreur lors de l'envoi des actualités: {str(e)}\n{traceback.format_exc()}")
         await update.message.reply_text("Désolé, une erreur s'est produite lors de la récupération des actualités.")
 
 async def setup():
@@ -173,7 +178,7 @@ async def setup():
         else:
             logger.error("WEBHOOK_URL n'est pas définie !")
     except Exception as e:
-        logger.error(f"Erreur lors de l'initialisation: {e}")
+        logger.error(f"Erreur lors de l'initialisation: {str(e)}\n{traceback.format_exc()}")
 
 async def shutdown():
     """Ferme proprement toutes les ressources."""
@@ -187,7 +192,7 @@ async def shutdown():
             await http_session.close()
             logger.info("Session HTTP fermée proprement.")
     except Exception as e:
-        logger.error(f"Erreur lors de l'arrêt: {e}")
+        logger.error(f"Erreur lors de l'arrêt: {str(e)}\n{traceback.format_exc()}")
 
 # --- Partie Serveur Web (Flask) ---
 app = Flask(__name__)
@@ -218,10 +223,10 @@ def webhook():
             logger.info("Traitement de la mise à jour terminé avec succès")
             return "ok", 200
         except Exception as e:
-            logger.error(f"Erreur lors du traitement de la mise à jour: {e}")
+            logger.error(f"Erreur lors du traitement de la mise à jour: {str(e)}\n{traceback.format_exc()}")
             return "error", 500
     except Exception as e:
-        logger.error(f"Erreur lors du traitement du webhook: {e}")
+        logger.error(f"Erreur lors du traitement du webhook: {str(e)}\n{traceback.format_exc()}")
         return "error", 500
 
 def init_app():
@@ -235,10 +240,10 @@ def init_app():
             logger.info("Initialisation de l'application terminée avec succès")
             return app
         except Exception as e:
-            logger.error(f"Erreur lors de l'initialisation: {e}")
+            logger.error(f"Erreur lors de l'initialisation: {str(e)}\n{traceback.format_exc()}")
             return None
     except Exception as e:
-        logger.error(f"Erreur lors de l'initialisation de l'application: {e}")
+        logger.error(f"Erreur lors de l'initialisation de l'application: {str(e)}\n{traceback.format_exc()}")
         return None
 
 # Initialisation de l'application
