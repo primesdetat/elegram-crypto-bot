@@ -84,19 +84,18 @@ else:
 
     # --- Logique de démarrage exécutée par Gunicorn ---
     async def setup():
-        """Configure le webhook une seule fois au démarrage."""
-        if not WEBHOOK_URL:
-            logger.error("La variable d'environnement WEBHOOK_URL n'est pas définie !")
-            return
-        # `get_bot` est nécessaire pour s'assurer que le bot est initialisé
-        await application.get_bot()
-        webhook_info = await application.bot.get_webhook_info()
-        full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
-        if webhook_info.url != full_webhook_url:
-            await application.bot.set_webhook(url=full_webhook_url)
-            logger.info(f"Webhook configuré sur {full_webhook_url}")
-        else:
-            logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
+    """Configure le webhook une seule fois au démarrage."""
+    if not WEBHOOK_URL:
+        logger.error("La variable d'environnement WEBHOOK_URL n'est pas définie !")
+        return
+    # La ligne erronée a été supprimée. On passe directement à l'utilisation de application.bot
+    webhook_info = await application.bot.get_webhook_info()
+    full_webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+    if webhook_info.url != full_webhook_url:
+        await application.bot.set_webhook(url=full_webhook_url)
+        logger.info(f"Webhook configuré sur {full_webhook_url}")
+    else:
+        logger.info(f"Webhook déjà configuré sur {full_webhook_url}")
 
     if __name__ != "__main__":
         # Cette condition est vraie quand Gunicorn lance l'application.
