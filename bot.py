@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 17:15"
+APP_VERSION = "2024.03.19 - 17:30"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -97,14 +97,32 @@ async def get_crypto_news():
                     article_url = article.get('url', '#')
                     source = article.get('source', 'Source inconnue')
                     
-                    # Utiliser HTML au lieu de MarkdownV2
+                    # Déterminer l'émoji en fonction du titre
+                    emoji = "📰"  # Émoji par défaut
+                    title_lower = title.lower()
+                    
+                    if any(word in title_lower for word in ['bitcoin', 'btc']):
+                        emoji = "₿"
+                    elif any(word in title_lower for word in ['ethereum', 'eth']):
+                        emoji = "Ξ"
+                    elif any(word in title_lower for word in ['prix', 'price', 'cours']):
+                        emoji = "📊"
+                    elif any(word in title_lower for word in ['régulation', 'regulation', 'loi', 'law']):
+                        emoji = "⚖️"
+                    elif any(word in title_lower for word in ['hack', 'piratage', 'vol']):
+                        emoji = "🔒"
+                    elif any(word in title_lower for word in ['adoption', 'partenariat', 'partnership']):
+                        emoji = "🤝"
+                    
+                    # Formatage amélioré avec HTML
                     formatted_news.append(
-                        f"<b>{title}</b>\n"
-                        f"Source: {source}\n"
-                        f"<a href='{article_url}'>Lire l'article</a>\n"
+                        f"{emoji} <b>{title}</b>\n"
+                        f"📌 Source: {source}\n"
+                        f"🔗 <a href='{article_url}'>Lire l'article</a>\n"
                     )
                 
-                result = "\n---\n\n".join(formatted_news)
+                # Séparateur plus élégant entre les articles
+                result = "\n\n" + "✨" + "—" * 20 + "✨" + "\n\n".join(formatted_news)
                 logger.info("Formatage des actualités terminé")
                 return result
             else:
