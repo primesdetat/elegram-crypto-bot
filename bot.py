@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 18:00"
+APP_VERSION = "2024.03.19 - 18:15"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -133,28 +133,24 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<i>Version du code : {APP_VERSION}</i>"
     )
 
-async def _process_news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fonction interne pour traiter la commande /actus."""
-    await update.message.reply_text("Recherche des dernières actualités...")
-    logger.info("Commande /actus reçue, début du traitement")
-    
-    news_message = await get_crypto_news()
-    logger.info("Actualités récupérées, envoi du message")
-    
-    await update.message.reply_text(
-        news_message,
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=True
-    )
-    logger.info("Message envoyé avec succès")
-
-def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envoie les actualités crypto."""
     try:
-        asyncio.run(_process_news_command(update, context))
+        await update.message.reply_text("Recherche des dernières actualités...")
+        logger.info("Commande /actus reçue, début du traitement")
+        
+        news_message = await get_crypto_news()
+        logger.info("Actualités récupérées, envoi du message")
+        
+        await update.message.reply_text(
+            news_message,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
+        logger.info("Message envoyé avec succès")
     except Exception as e:
         logger.error(f"Erreur lors de l'envoi des actualités: {e}")
-        asyncio.run(update.message.reply_text("Désolé, une erreur s'est produite lors de la récupération des actualités."))
+        await update.message.reply_text("Désolé, une erreur s'est produite lors de la récupération des actualités.")
 
 # --- Initialisation de l'application Telegram ---
 if not TELEGRAM_TOKEN:
@@ -173,14 +169,12 @@ else:
         return f"Bot server is running. Version: {APP_VERSION}"
 
     @app.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
-    def webhook():
+    async def webhook():
         if application:
             try:
                 update_data = request.get_json()
                 update = Update.de_json(update_data, application.bot)
-                
-                # Exécuter le traitement de la mise à jour dans une nouvelle boucle
-                asyncio.run(application.process_update(update))
+                await application.process_update(update)
                 return "ok", 200
             except Exception as e:
                 logger.error(f"Erreur lors du traitement du webhook: {e}")
@@ -220,10 +214,14 @@ else:
 
     if __name__ != "__main__" and application:
         try:
-            # Exécuter la configuration dans une nouvelle boucle
-            asyncio.run(setup())
+            # Créer une nouvelle boucle d'événements
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Exécuter la configuration
+            loop.run_until_complete(setup())
             
             # Enregistrer la fonction d'arrêt
-            atexit.register(lambda: asyncio.run(shutdown()))
+            atexit.register(lambda: loop.run_until_complete(shutdown()))
         except Exception as e:
             logger.error(f"Erreur lors du démarrage: {e}")
