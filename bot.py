@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 16:15"
+APP_VERSION = "2024.03.19 - 16:30"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -48,12 +48,18 @@ async def get_crypto_news():
     """Récupère les dernières actualités crypto depuis l'API CryptoCompare."""
     url = f"https://min-api.cryptocompare.com/data/v2/news/?lang=FR&api_key={CRYPTOCOMPARE_API_KEY}"
     try:
-        response = requests.get(url, timeout=10)
+        logger.info("Début de la récupération des actualités...")
+        response = requests.get(url, timeout=5)  # Réduit le timeout à 5 secondes
+        logger.info(f"Réponse reçue de l'API: {response.status_code}")
+        
         response.raise_for_status()
         data = response.json()
+        logger.info("Données JSON reçues avec succès")
 
         if data.get("Type") == 100 and "Data" in data:
             articles = data["Data"][:5]
+            logger.info(f"Nombre d'articles trouvés: {len(articles)}")
+            
             formatted_news = []
             for article in articles:
                 title = article.get('title', 'Titre non disponible')
@@ -68,12 +74,22 @@ async def get_crypto_news():
                     f"Source: {source_escaped}\n"
                     f"[Lire l'article]({article_url})\n"
                 )
-            return "\n---\n\n".join(formatted_news)
+            
+            result = "\n---\n\n".join(formatted_news)
+            logger.info("Formatage des actualités terminé")
+            return result
         else:
+            logger.error(f"Format de réponse inattendu: {data}")
             return "Désolé, je n'ai pas pu récupérer les actualités (format de réponse inattendu)."
+    except requests.exceptions.Timeout:
+        logger.error("Timeout lors de l'appel à l'API CryptoCompare")
+        return "Désolé, la requête a pris trop de temps. Veuillez réessayer."
     except requests.exceptions.RequestException as e:
         logger.error(f"ERREUR lors de l'appel à CryptoCompare: {e}")
         return "Erreur de connexion à la source d'actualités. Veuillez réessayer plus tard."
+    except Exception as e:
+        logger.error(f"Erreur inattendue: {e}")
+        return "Une erreur inattendue s'est produite. Veuillez réessayer."
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Message de bienvenue pour la commande /start."""
@@ -84,9 +100,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envoie les actualités crypto."""
-    await update.message.reply_text("Recherche des dernières actualités...")
-    news_message = await get_crypto_news()
-    await update.message.reply_text(news_message, parse_mode='MarkdownV2', disable_web_page_preview=True)
+    try:
+        await update.message.reply_text("Recherche des dernières actualités...")
+        logger.info("Commande /actus reçue, début du traitement")
+        
+        news_message = await get_crypto_news()
+        logger.info("Actualités récupérées, envoi du message")
+        
+        await update.message.reply_text(news_message, parse_mode='MarkdownV2', disable_web_page_preview=True)
+        logger.info("Message envoyé avec succès")
+    except Exception as e:
+        logger.error(f"Erreur lors de l'envoi des actualités: {e}")
+        await update.message.reply_text("Désolé, une erreur s'est produite lors de la récupération des actualités.")
 
 # --- Initialisation de l'application Telegram ---
 if not TELEGRAM_TOKEN:
