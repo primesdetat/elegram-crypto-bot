@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Version de l'application
-APP_VERSION = "2024.03.19 - 16:00"
+APP_VERSION = "2024.03.19 - 16:15"
 
 # --- Configuration ---
 logging.basicConfig(
@@ -22,6 +22,19 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+# Création d'une boucle d'événements globale
+loop = None
+
+def get_or_create_eventloop():
+    """Crée ou récupère la boucle d'événements."""
+    global loop
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
 
 # --- Fonctions du bot (métier) ---
 def escape_markdown(text):
@@ -98,12 +111,8 @@ else:
                 update_data = request.get_json()
                 update = Update.de_json(update_data, application.bot)
                 
-                # Créer une nouvelle boucle d'événements si nécessaire
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                # Utiliser la boucle d'événements globale
+                loop = get_or_create_eventloop()
                 
                 # Exécuter le traitement de la mise à jour dans la boucle
                 await application.process_update(update)
@@ -142,9 +151,8 @@ else:
 
     if __name__ != "__main__" and application:
         try:
-            # Créer une nouvelle boucle d'événements
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Initialiser la boucle d'événements globale
+            loop = get_or_create_eventloop()
             
             # Exécuter la configuration
             loop.run_until_complete(setup())
